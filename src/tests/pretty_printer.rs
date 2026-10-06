@@ -3,7 +3,7 @@ use crate::tests::util::test_get_export_file;
 use std::error::Error;
 
 fn render_binders(is_pi: bool, binders: &[(&'static str, u64, BinderStyle)]) -> Result<String, Box<dyn Error>> {
-    let (mut export, _) = test_get_export_file(None)?;
+    let (mut export, _, _) = test_get_export_file(None)?;
     export.config.pp_options.proofs = true;
     Ok(export.with_ctx(|ctx| {
         let mut body = ctx.mk_sort(ctx.zero());

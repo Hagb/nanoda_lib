@@ -1,11 +1,11 @@
 use crate::util::{ExprPtr, FxHashMap, FxIndexMap, LevelsPtr, NamePtr};
 use std::sync::Arc;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 /// Reducibility hints accompany definitions; used to determine how
 /// to unfold expressions in order to most efficiently proceed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum ReducibilityHint {
     #[serde(rename = "opaque")]
     Opaque,
@@ -83,6 +83,7 @@ pub struct InductiveData<'a> {
     /// from other elements in a mutual block, nothing from any nested
     /// construction.
     pub(crate) all_ctor_names: Arc<[NamePtr<'a>]>,
+    pub all_recs_name: Arc<[NamePtr<'a>]>
 }
 
 impl<'a> InductiveData<'a> {

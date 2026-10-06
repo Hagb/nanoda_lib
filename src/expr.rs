@@ -3,7 +3,7 @@ use crate::util::{BigUintPtr, ExprPtr, FxHashMap, LevelPtr, LevelsPtr, NamePtr, 
 use num_bigint::BigUint;
 use num_traits::identities::Zero;
 use Expr::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub(crate) const VAR_HASH: u64 = 281;
 pub(crate) const SORT_HASH: u64 = 563;
@@ -137,7 +137,7 @@ impl<'a> std::hash::Hash for Expr<'a> {
 ///
 /// These are only used by the pretty printer, and do not change the behavior of
 /// type checking.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum BinderStyle {
     #[serde(rename = "default")]
     Default,

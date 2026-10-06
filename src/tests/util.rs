@@ -1,3 +1,4 @@
+use crate::parser::ExportJsonObject;
 use crate::util::{Config, CowStr, ExportFile, ExprPtr, LevelPtr, TcCtx};
 use rand::distr::Alphanumeric;
 use rand::rngs::ThreadRng;
@@ -8,11 +9,11 @@ pub(crate) fn test_export_file<A>(
     config_path: Option<&Path>,
     f: impl FnOnce(&ExportFile) -> A,
 ) -> Result<A, Box<dyn Error>> {
-    let (export_file, _) = test_get_export_file(config_path)?;
+    let (export_file, _, _) = test_get_export_file(config_path)?;
     Ok(f(&export_file))
 }
 
-pub(crate) fn test_get_export_file<'p>(config_path: Option<&Path>) -> Result<(ExportFile<'p>, Vec<String>), Box<dyn Error>> {
+pub(crate) fn test_get_export_file<'p, 'b>(config_path: Option<&Path>) -> Result<(ExportFile<'p>, Vec<String>, Vec<ExportJsonObject<'b>>), Box<dyn Error>> {
     let config_file = match config_path {
         None => Config {
             export_file_path: Some(PathBuf::from("test_resources/Empty/export")),
@@ -29,7 +30,9 @@ pub(crate) fn test_get_export_file<'p>(config_path: Option<&Path>) -> Result<(Ex
             num_threads: 1,
             print_success_message: true,
             print_axioms: true,
-            unsafe_permit_all_axioms: false
+            unsafe_permit_all_axioms: false,
+            paired_export_file_path: None,
+            output_export_file_path: None,
         },
         Some(config_path) => Config::try_from(config_path)?,
     };
@@ -42,7 +45,7 @@ pub(crate) fn test_export_file_should_panic<A>(config_path: Option<&Path>, f: im
     // `should_panic` test to succeed, so we actually want to return success in this case.
     match test_get_export_file(config_path) {
         Err(..) => {}
-        Ok((export_file, _)) => {
+        Ok((export_file, _, _)) => {
             f(&export_file);
         }
     }

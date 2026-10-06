@@ -563,25 +563,7 @@ impl<'x, 't, 'p> PrettyPrinter<'x, 't, 'p> {
     ///
     /// Example: name_to_string(`Foo.Bar.Baz`) == "Foo.Bar.Baz"
     fn name_to_string(&self, n: NamePtr<'t>) -> String {
-        match self.ctx.read_name(n) {
-            Name::Anon => String::new(),
-            Name::Str(pfx, sfx, _) => {
-                let mut out = self.name_to_string(pfx);
-                if !out.is_empty() {
-                    out.push('.');
-                }
-                out.push_str(self.ctx.read_string(sfx).as_ref());
-                out
-            }
-            Name::Num(pfx, sfx, _) => {
-                let mut out = self.name_to_string(pfx);
-                if !out.is_empty() {
-                    out.push('.');
-                }
-                out.push_str(format!("{}", sfx).as_str());
-                out
-            }
-        }
+        self.ctx.name_to_string(n)
     }
 
     fn pp_level(&self, lvl: LevelPtr<'t>) -> Parenable {

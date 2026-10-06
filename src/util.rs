@@ -1,15 +1,17 @@
-use crate::env::{DeclarMap, Env, NotationMap, EnvLimit};
+use crate::env::{DeclarMap, Env, EnvLimit, NotationMap};
 use crate::expr::{BinderStyle, Expr, FVarId};
 use crate::level::Level;
 use crate::name::Name;
+use crate::parser::ExportJsonObject;
 use crate::pretty_printer::{PpOptions, PrettyPrinter};
 use crate::tc::TypeChecker;
 use crate::unique_hasher::UniqueHasher;
 use indexmap::{IndexMap, IndexSet};
 use num_bigint::BigUint;
-use num_traits::{ Pow, identities::Zero };
 use num_integer::Integer;
+use num_traits::{identities::Zero, Pow};
 use rustc_hash::FxHasher;
+use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -21,7 +23,6 @@ use std::io::Write;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use serde::Deserialize;
 
 pub(crate) const fn default_true() -> bool { true }
 
@@ -62,8 +63,12 @@ impl<A> Ptr<A> {
 
     pub(crate) fn idx(&self) -> usize { (self.raw & IDX_MASK) as usize }
 
-    pub(crate) fn dag_marker(&self) -> DagMarker {
-        if self.raw & TC_BIT == 0 { DagMarker::ExportFile } else { DagMarker::TcCtx }
+    pub fn dag_marker(&self) -> DagMarker {
+        if self.raw & TC_BIT == 0 {
+            DagMarker::ExportFile
+        } else {
+            DagMarker::TcCtx
+        }
     }
 
     pub(crate) fn get_hash(&self) -> u64 { self.raw as u64 }
@@ -149,28 +154,16 @@ pub(crate) fn nat_mod(x: BigUint, y: BigUint) -> BigUint {
     }
 }
 
-pub(crate) fn nat_gcd(x: &BigUint, y: &BigUint) -> BigUint {
-    x.gcd(y)
-}
+pub(crate) fn nat_gcd(x: &BigUint, y: &BigUint) -> BigUint { x.gcd(y) }
 
-pub(crate) fn nat_xor(x: &BigUint, y: &BigUint) -> BigUint {
-    x ^ y
-}
+pub(crate) fn nat_xor(x: &BigUint, y: &BigUint) -> BigUint { x ^ y }
 
-pub(crate) fn nat_shl(x: BigUint, y: BigUint) -> BigUint {
-    x * BigUint::from(2u8).pow(y)
-}
+pub(crate) fn nat_shl(x: BigUint, y: BigUint) -> BigUint { x * BigUint::from(2u8).pow(y) }
 
-pub(crate) fn nat_shr(x: BigUint, y: BigUint) -> BigUint {
-    x / BigUint::from(2u8).pow(y)
-}
+pub(crate) fn nat_shr(x: BigUint, y: BigUint) -> BigUint { x / BigUint::from(2u8).pow(y) }
 
-pub(crate) fn nat_land(x: BigUint, y: BigUint) -> BigUint {
-    x & y
-}
-pub(crate) fn nat_lor(x: BigUint, y: BigUint) -> BigUint {
-    x | y
-}
+pub(crate) fn nat_land(x: BigUint, y: BigUint) -> BigUint { x & y }
+pub(crate) fn nat_lor(x: BigUint, y: BigUint) -> BigUint { x | y }
 
 pub struct ExprCache<'t> {
     /// Caches (e, offset) |-> output for instantiation. This cache is reset
@@ -202,7 +195,7 @@ impl<'t> ExprCache<'t> {
 
 pub struct ExportFile<'p> {
     /// The underlying storage for `Name`, `Level`, and `Expr` items (and Strings).
-    pub(crate) dag: LeanDag<'p>,
+    pub dag: LeanDag<'p>,
     /// Declarations from the export file
     pub declars: DeclarMap<'p>,
     /// Notations from the export file
@@ -212,11 +205,13 @@ pub struct ExportFile<'p> {
     pub config: Config,
     // Information used for setting EnvLimit during inductive checking.
     pub mutual_block_sizes: FxHashMap<NamePtr<'p>, (usize, usize)>,
-    pub ind_name_to_recursor_names: FxHashMap<NamePtr<'p>, FxHashSet<NamePtr<'p>>>
+    pub ind_name_to_recursor_names: FxHashMap<NamePtr<'p>, FxHashSet<NamePtr<'p>>>,
 }
 
 impl<'p> ExportFile<'p> {
-    pub fn new_env(&self, env_limit: EnvLimit<'p>) -> Env<'_, '_> { Env::new(&self.declars, &self.notations, env_limit) }
+    pub fn new_env(&self, env_limit: EnvLimit<'p>) -> Env<'_, '_> {
+        Env::new(&self.declars, &self.notations, env_limit)
+    }
 
     pub fn with_ctx<F, A>(&self, f: F) -> A
     where
@@ -258,11 +253,11 @@ pub struct TcCtx<'t, 'p> {
     //anchor: PhantomData<&'t AnchorZst>,
     /// Each type checker's context shares an immutable reference to the structured contents of
     /// the export file, and some additional information taken from the export file.
-    pub(crate) export_file: &'t ExportFile<'p>,
+    pub export_file: &'t ExportFile<'p>,
     /// The underlying storage for temporary `Name`, `Level`, and `Expr`` items created while
     /// type checking a declaration. These are dropped once the declaration is verified, since
     /// they are no longer needed.
-    pub(crate) dag: &'t mut LeanDag<'t>,
+    pub dag: &'t mut LeanDag<'t>,
     /// Non-monotonic counter showing the current deBruijn level (which is also the number
     /// of binders that are open above us). When a binder is opened and traversed under, this
     /// counter is incremented. When the binder is closed again, this counter is decremented.
@@ -272,18 +267,18 @@ pub struct TcCtx<'t, 'p> {
     pub(crate) unique_counter: u32,
     /// A cache for instantiation, free variable abstraction, and level substitution
     pub(crate) expr_cache: ExprCache<'t>,
-    pub(crate) eager_mode: bool
+    pub(crate) eager_mode: bool,
 }
 
 impl<'t, 'p: 't> TcCtx<'t, 'p> {
     pub fn new(export_file: &'t ExportFile<'p>, tdag: &'t mut LeanDag<'t>) -> Self {
-        Self { 
+        Self {
             export_file,
             dag: tdag,
             dbj_level_counter: 0u16,
             unique_counter: 0u32,
             expr_cache: ExprCache::new(),
-            eager_mode: false
+            eager_mode: false,
         }
     }
 
@@ -298,7 +293,12 @@ impl<'t, 'p: 't> TcCtx<'t, 'p> {
     pub fn with_tc_and_env_ext<'x, F, A>(&mut self, env_ext: &'x DeclarMap<'t>, env_limit: EnvLimit<'p>, f: F) -> A
     where
         F: FnOnce(&mut TypeChecker<'_, 't, 'p>) -> A, {
-        let env = crate::env::Env::new_w_temp_ext(&self.export_file.declars, Some(env_ext), &self.export_file.notations, env_limit);
+        let env = crate::env::Env::new_w_temp_ext(
+            &self.export_file.declars,
+            Some(env_ext),
+            &self.export_file.notations,
+            env_limit,
+        );
         let mut tc = TypeChecker::new(self, &env, None);
         f(&mut tc)
     }
@@ -553,7 +553,7 @@ impl<'t, 'p: 't> TcCtx<'t, 'p> {
         binder_type: ExprPtr<'t>,
         val: ExprPtr<'t>,
         body: ExprPtr<'t>,
-        nondep: bool
+        nondep: bool,
     ) -> ExprPtr<'t> {
         let hash = hash64!(crate::expr::LET_HASH, binder_name, binder_type, val, body, nondep);
         let num_loose_bvars = self
@@ -665,6 +665,28 @@ impl<'t, 'p: 't> TcCtx<'t, 'p> {
     pub(crate) fn fvar_to_bvar(&mut self, num_open_binders: u16, dbj_level: u16) -> ExprPtr<'t> {
         self.mk_var((num_open_binders - dbj_level) - 1)
     }
+
+    pub fn name_to_string(&self, n: NamePtr<'t>) -> String {
+        match self.read_name(n) {
+            Name::Anon => String::new(),
+            Name::Str(pfx, sfx, _) => {
+                let mut out = self.name_to_string(pfx);
+                if !out.is_empty() {
+                    out.push('.');
+                }
+                out.push_str(self.read_string(sfx).as_ref());
+                out
+            }
+            Name::Num(pfx, sfx, _) => {
+                let mut out = self.name_to_string(pfx);
+                if !out.is_empty() {
+                    out.push('.');
+                }
+                out.push_str(format!("{}", sfx).as_str());
+                out
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -717,7 +739,7 @@ impl<'a> LeanDag<'a> {
     }
 
     // Find e.g. `Quot.lift` from "Quot.lift"
-    fn find_name(&self, dot_separated_name: &str) -> Option<NamePtr<'a>> {
+    pub fn find_name(&self, dot_separated_name: &str) -> Option<NamePtr<'a>> {
         let mut pfx = self.anonymous();
         for s in dot_separated_name.split('.') {
             if let Ok(num) = s.parse::<u64>() {
@@ -892,19 +914,19 @@ pub struct Config {
     #[serde(default)]
     pub num_threads: usize,
 
-    #[serde(default)] 
+    #[serde(default)]
     pub nat_extension: bool,
-    #[serde(default)] 
+    #[serde(default)]
     pub string_extension: bool,
 
     /// A list of declaration names the user wants to be pretty-printed back to them on termination.
     pub pp_declars: Option<Vec<String>>,
 
     /// Indicates what the typechecker should do when it's been asked to pretty-print a declaration
-    /// that is not actually in the environment. We give this option because that scenario is 
+    /// that is not actually in the environment. We give this option because that scenario is
     /// strongly indicative of a mismatch between what the user thinks is in the export file and
     /// what is actually in the export file.
-    /// If `true`, the typechecker will fail with a hard error. 
+    /// If `true`, the typechecker will fail with a hard error.
     /// If `false`, the typechecker will not fail just because of this.
     #[serde(default = "default_true")]
     pub unknown_pp_declar_hard_error: bool,
@@ -922,14 +944,20 @@ pub struct Config {
     pub print_success_message: bool,
 
     /// If `true`, the typechecker will print the axioms actually admitted to the environment
-    /// when typechecking is finished. 
+    /// when typechecking is finished.
     #[serde(default = "default_true")]
     pub print_axioms: bool,
 
-    /// If set to `true`, will allow all axioms to be admitted to the environment. 
+    /// If set to `true`, will allow all axioms to be admitted to the environment.
     /// This is checked so as to be mutually exclusive with any of the axiom allow list/whitelist features.
     #[serde(default)]
     pub unsafe_permit_all_axioms: bool,
+
+    #[serde(default)]
+    pub paired_export_file_path: Option<PathBuf>,
+
+    #[serde(default)]
+    pub output_export_file_path: Option<PathBuf>
 }
 
 impl TryFrom<&Path> for Config {
@@ -940,17 +968,25 @@ impl TryFrom<&Path> for Config {
             Ok(config_file) => {
                 let config = serde_json::from_reader::<_, Config>(BufReader::new(config_file)).unwrap();
                 if config.export_file_path.is_none() && !config.use_stdin {
-                    return Err(Box::from(format!("incompatible config options: must specify a path to an export file OR set `use_stdin: true`")))
+                    return Err(Box::from(format!(
+                        "incompatible config options: must specify a path to an export file OR set `use_stdin: true`"
+                    )))
                 }
                 if config.export_file_path.is_some() && config.use_stdin {
-                    return Err(Box::from(format!("incompatible config options: if an export file path is given, `use_stdin` cannot be `true`")))
+                    return Err(Box::from(format!(
+                        "incompatible config options: if an export file path is given, `use_stdin` cannot be `true`"
+                    )))
                 }
                 if config.unsafe_permit_all_axioms {
                     if config.unpermitted_axiom_hard_error {
-                        return Err(Box::from(format!("incompatible config options: unsafe_permit_all_axioms && unpermitted_axioms_hard_error")))
+                        return Err(Box::from(format!(
+                            "incompatible config options: unsafe_permit_all_axioms && unpermitted_axioms_hard_error"
+                        )))
                     }
                     if config.permitted_axioms.is_some() {
-                        return Err(Box::from(format!("incompatible config options: unsafe_permit_all_axioms && nonempty permitted_axioms list")))
+                        return Err(Box::from(format!(
+                            "incompatible config options: unsafe_permit_all_axioms && nonempty permitted_axioms list"
+                        )))
                     }
                 }
                 Ok(config)
@@ -990,7 +1026,7 @@ impl Config {
 
     // Returns the export file, and a list of strings representing the names of "skipped" axioms
     // (axioms which were in the export file, but not allowed by the execution config).
-    pub fn to_export_file<'a>(self) -> Result<(ExportFile<'a>, Vec<String>), Box<dyn Error>> {
+    pub fn to_export_file<'a, 'b>(self) -> Result<(ExportFile<'a>, Vec<String>, Vec<ExportJsonObject<'b>>), Box<dyn Error>> {
         if let Some(pathbuf) = self.export_file_path.as_ref() {
             match OpenOptions::new().read(true).truncate(false).open(pathbuf) {
                 Ok(file) => crate::parser::parse_export_file(BufReader::new(file), self),
@@ -1003,6 +1039,16 @@ impl Config {
             panic!("Configuration file must specify en export file path or \"use_stdin\": true")
         }
     }
+    pub fn to_paired_export_file<'a, 'b>(self) -> Result<(ExportFile<'a>, Vec<String>, Vec<ExportJsonObject<'b>>), Box<dyn Error>> {
+        if let Some(pathbuf) = self.paired_export_file_path.as_ref() {
+            match OpenOptions::new().read(true).truncate(false).open(pathbuf) {
+                Ok(file) => crate::parser::parse_export_file(BufReader::new(file), self),
+                Err(e) => Err(Box::from(format!("Failed to open export file: {:?}", e))),
+            }
+        } else {
+            Err(Box::from("No paired "))
+        }
+    }
 }
 
 // The intent is to use this for reporting exit status/error info
@@ -1012,6 +1058,5 @@ impl Config {
 #[derive(Debug, Clone)]
 struct ExitStatus {
     tc_err: Option<String>,
-    pp_err: Option<String>
+    pp_err: Option<String>,
 }
-

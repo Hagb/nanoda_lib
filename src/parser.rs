@@ -75,11 +75,11 @@ struct FileMeta<'a> {
 
 #[derive(Hash, Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum BackRef {
-    #[serde(alias = "in")]
+    #[serde(rename = "in")]
     In(u32),
-    #[serde(alias = "il")]
+    #[serde(rename = "il")]
     Il(u32),
-    #[serde(alias = "ie")]
+    #[serde(rename = "ie")]
     Ie(u32),
 }
 
@@ -406,8 +406,8 @@ pub fn parse_export_file<'p, 'a, R: BufRead>(
             break
         }
         let ret = parser.go1(line_buffer.as_str())?;
-        if matches!(ret, ExportJsonObject {val : ExportJsonVal::Metadata(..), ..}) && parser.line_num != 0 {
-            export_objects.push(ret);   
+        if matches!(ret, ExportJsonObject { val: ExportJsonVal::Metadata(..), .. }) && parser.line_num != 0 {
+            export_objects.push(ret);
             break;
         }
         export_objects.push(ret);
@@ -585,18 +585,21 @@ impl<'a> LeanDag<'a> {
     }
 
     pub fn get_uparams_ptr_with_default_zero(&mut self, name_idxs: &[Option<u32>]) -> LevelsPtr<'a> {
-        let levels : Vec<_> = name_idxs.iter().map(|name_idx| {
-            LevelPtr::from(
-                DagMarker::ExportFile,
-                if let Some(name_idx) = *name_idx {
-                    let name_ptr = self.get_name_ptr(name_idx);
-                    let hash = hash64!(crate::level::PARAM_HASH, name_ptr);
-                    self.levels.get_index_of(&Level::Param(name_ptr, hash)).unwrap()
-                } else {
-                    self.levels.get_index_of(&Level::Zero).unwrap()
-                },
-            )
-        }).collect();
+        let levels: Vec<_> = name_idxs
+            .iter()
+            .map(|name_idx| {
+                LevelPtr::from(
+                    DagMarker::ExportFile,
+                    if let Some(name_idx) = *name_idx {
+                        let name_ptr = self.get_name_ptr(name_idx);
+                        let hash = hash64!(crate::level::PARAM_HASH, name_ptr);
+                        self.levels.get_index_of(&Level::Param(name_ptr, hash)).unwrap()
+                    } else {
+                        self.levels.get_index_of(&Level::Zero).unwrap()
+                    },
+                )
+            })
+            .collect();
         // );
         // }
         LevelsPtr::from(DagMarker::ExportFile, self.uparams.insert_full(Arc::from(levels)).0)

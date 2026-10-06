@@ -544,9 +544,9 @@ impl<'a> LeanDag<'a> {
 
     fn has_fvars(&self, e: ExprPtr<'a>) -> bool { self.exprs.get_index(e.idx()).unwrap().has_fvars() }
 
-    fn get_name_ptr(&self, idx: u32) -> NamePtr<'a> {
+    pub fn get_name_ptr(&self, idx: u32) -> NamePtr<'a> {
         let out = crate::util::Ptr::from(DagMarker::ExportFile, idx as usize);
-        assert!((idx as usize) < self.names.len(), "{} < {}", idx, self.names.len());
+        assert!((idx as usize) < self.names.len(), "{} !< {}", idx, self.names.len());
         out
     }
 
@@ -600,15 +600,18 @@ impl<'a> LeanDag<'a> {
     ) -> Result<LeanDagInsertResult<'a>, Box<dyn Error>> {
         use ExportJsonVal::*;
         let insert_name = move |self_: &mut Self, v| {
-            let (i, b) = self_.names.insert_full(v);
+            let (i, b) =
+                if let Some(i) = self_.names.get_index_of(&v) { (i, false) } else { self_.names.insert_full(v) };
             Ok(LeanDagInsertResult::Id((BackRef::In(i.try_into().unwrap()), b)))
         };
         let insert_level = |self_: &mut Self, v| {
-            let (i, b) = self_.levels.insert_full(v);
+            let (i, b) =
+                if let Some(i) = self_.levels.get_index_of(&v) { (i, false) } else { self_.levels.insert_full(v) };
             Ok(LeanDagInsertResult::Id((BackRef::Il(i.try_into().unwrap()), b)))
         };
         let insert_expr = |self_: &mut Self, v| {
-            let (i, b) = self_.exprs.insert_full(v);
+            let (i, b) =
+                if let Some(i) = self_.exprs.get_index_of(&v) { (i, false) } else { self_.exprs.insert_full(v) };
             Ok(LeanDagInsertResult::Id((BackRef::Ie(i.try_into().unwrap()), b)))
         };
         let insert_declar = |name, declar| Ok(LeanDagInsertResult::Declars(vec![(name, declar, None)]));

@@ -29,7 +29,7 @@ pub enum Key<'t> {
     // End,
 }
 
-const PRIMITIVES: [&str; 32] = [
+pub const PRIMITIVES: [&str; 31] = [
     "eagerReduce",
     "Quot",
     "Quot.mk",
@@ -37,6 +37,7 @@ const PRIMITIVES: [&str; 32] = [
     "Quot.ind",
     "String",
     "String.ofList",
+    // "String.rec", //
     "Nat",
     "Nat.zero",
     "Nat.succ",
@@ -58,16 +59,24 @@ const PRIMITIVES: [&str; 32] = [
     // "Bool",    //
     "Bool.true",
     "Bool.false",
+    // "Bool.rec", //
     "Char",
     "Char.ofNat",
     // "Char.rec", //
+    // "UInt32",   //
     "List",
     "List.nil",
     "List.cons",
-    // "List.rec", //
-    "sorryAx",
-    // "u",
-    // "v",
+    // "List.rec",         //
+    // "sorryAx",          //
+    // "propext",          //
+    // "Iff",              //
+    // "Iff.intro",        //
+    // "Classical.choice", //
+    // "Nonempty",         //
+    // "Nonempty.intro",   //
+    // "Eq",               //
+    // "Eq.refl",//
 ];
 
 // enum NameNode<'t> {
@@ -151,14 +160,14 @@ impl<'x, 't, 'p> PrimitiveEnv<'x, 't, 'p> {
     }
 
     pub fn get_primitives(&mut self, n: NamePtr<'t>, ty_only: bool /*, levels: Option<LevelsPtr<'t>>*/) {
-        // eprintln!("get_primitives {}", self.tc.ctx.name_to_string(n));
         if self.declars.contains(&n) {
             return ()
         }
         self.declars.insert(n);
+        // eprintln!("get_primitives {}", self.tc.ctx.name_to_string(n));
         let Some(declar) = self.tc.env.get_declar(&n) else {
-            eprintln!("no declaration of `{}`", self.tc.ctx.name_to_string(n));
-            return
+            panic!("no declaration of `{}`", self.tc.ctx.name_to_string(n));
+            // return
         };
         self.primitives.push(if matches!(
             declar,
@@ -209,12 +218,20 @@ impl<'x, 't, 'p> PrimitiveEnv<'x, 't, 'p> {
         let mut primitives: FxHashMap<NamePtr<'t2>, NamePtr<'t>> = Default::default();
         let mut levels: FxHashMap<NamePtr<'t2>, NamePtr<'t>> = Default::default();
         let mut end = 0;
-        for prim in PRIMITIVES {
+        for prim in PRIMITIVES
+            .iter()
+            .map(|x| *x)
+            .chain(self.tc.ctx.export_file.config.permitted_axioms.clone().unwrap_or(vec![]).iter().map(|x| x.as_str()))
+        {
             // todo: use cache
             // env1.dag.
             if let Some(n1) = self.tc.ctx.export_file.dag.find_name(prim) {
                 if let Some(n2) = env2.tc.ctx.export_file.dag.find_name(prim) {
-                    eprintln!("early declar: {} -> {}", env2.tc.ctx.name_to_string(n2), self.tc.ctx.name_to_string(n1));
+                    eprintln!(
+                        "force axiom/declar pairing: {} -> {}",
+                        env2.tc.ctx.name_to_string(n2),
+                        self.tc.ctx.name_to_string(n1)
+                    );
                     primitives.insert(n2, n1);
                 }
             }
@@ -222,7 +239,11 @@ impl<'x, 't, 'p> PrimitiveEnv<'x, 't, 'p> {
         for u in ["u", "v", "q"] {
             if let Some(n1) = self.tc.ctx.export_file.dag.find_name(u) {
                 if let Some(n2) = env2.tc.ctx.export_file.dag.find_name(u) {
-                    eprintln!("early level: {} -> {}", env2.tc.ctx.name_to_string(n2), self.tc.ctx.name_to_string(n1));
+                    eprintln!(
+                        "early level pairing: {} -> {}",
+                        env2.tc.ctx.name_to_string(n2),
+                        self.tc.ctx.name_to_string(n1)
+                    );
                     levels.insert(n2, n1);
                 }
             }
@@ -300,31 +321,34 @@ impl<'x, 't, 'p> PrimitiveEnv<'x, 't, 'p> {
             // todo: use cache
             if let Some(n1) = self.tc.ctx.export_file.dag.find_name(prim) {
                 if let Some(n2) = env2.tc.ctx.export_file.dag.find_name(prim) {
-                    eprintln!(
-                        "early get axiom/primitive declar: {} -> {}",
-                        env2.tc.ctx.name_to_string(n2),
-                        self.tc.ctx.name_to_string(n1)
-                    );
-                    // why overflow?
-                    self.get_primitives(n1, false);
-                    env2.get_primitives(n2, false);
+                    if self.tc.env.get_declar(&n1).is_some() && env2.tc.env.get_declar(&n2).is_some() {
+                        eprintln!(
+                            "early get axiom/primitive declar: {} -> {}",
+                            env2.tc.ctx.name_to_string(n2),
+                            self.tc.ctx.name_to_string(n1)
+                        );
+                        self.get_primitives(n1, false);
+                        env2.get_primitives(n2, false);
+                    }
                 }
             }
         }
         self.get_primitives(n1, true);
         env2.get_primitives(n2, true);
         let (primitives, levels) = self.pair_primitives(env2);
-        fn name_to_id<'x_, 't_, 'p_>(env: &PrimitiveEnv<'x_, 't_, 'p_>, name: NamePtr<'t_>) -> u32 {
-            let name_ = env.tc.ctx.read_name(name);
+        fn name_to_id<'x_, 't_, 'p_>(name: NamePtr<'t_>) -> u32 {
+            // let name_ = env.tc.ctx.read_name(name);
             // match name.dag_marker() {
             //     DagMarker::ExportFile => &env.tc.ctx.export_file.dag.names,
             //     DagMarker::TcCtx => &env.tc.ctx.dag.names,
             // }.
-            env.tc.ctx.export_file.dag.names.get_index_of(&name_).unwrap().try_into().unwrap()
+            // env.tc.ctx.export_file.dag.names.get_index_of(&name_).unwrap().try_into().unwrap()
+            assert_eq!(name.dag_marker(), DagMarker::ExportFile);
+            name.idx().try_into().unwrap()
         }
         (
-            primitives.into_iter().map(|(x, y)| (name_to_id(env2, x), name_to_id(self, y))).collect(),
-            levels.into_iter().map(|(x, y)| (name_to_id(env2, x), name_to_id(self, y))).collect(),
+            primitives.into_iter().map(|(x, y)| (name_to_id(x), name_to_id(y))).collect(),
+            levels.into_iter().map(|(x, y)| (name_to_id(x), name_to_id(y))).collect(),
         )
 
         // let n1 = self.tc.ctx.read_name(self.tc.ctx.dag.find_name(n).unwrap());

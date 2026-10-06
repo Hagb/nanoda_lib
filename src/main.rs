@@ -3,7 +3,7 @@
 use nanoda_lib::env::EnvLimit;
 use nanoda_lib::expr::Expr;
 use nanoda_lib::pair::Key::Const;
-use nanoda_lib::pair::PrimitiveEnv;
+use nanoda_lib::pair::{PrimitiveEnv, PRIMITIVES};
 use nanoda_lib::parser::{
     BackRef, Constructor, ExportJsonObject, ExportJsonVal, IndInfo, LeanDagInsertResult, Recursor, RecursorRule,
 };
@@ -45,6 +45,7 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
 
     if let Ok((mut paired_export_file, _, mut pair_objs)) = cfg.clone().to_paired_export_file() {
         paired_export_file.check_all_declars();
+        fn name_from_str(s: &str) -> Vec<String> { s.split(".").map(|x| x.to_string()).collect() }
 
         let mut insert_obj = |export_file: &mut ExportFile, objs: &mut Vec<_>, obj: ExportJsonVal<'c>| {
             let ret = match export_file.dag.go1(obj.clone(), Some(&cfg)).unwrap() {
@@ -52,7 +53,11 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
                 LeanDagInsertResult::Declars(declars) => {
                     let declar_size = export_file.declars.len();
                     for (name, declar, mutual_block_size) in declars {
-                        assert!(export_file.declars.insert(name, declar).is_none(), "duplicated {}", export_file.with_ctx(|x| x.name_to_string(name)));
+                        assert!(
+                            export_file.declars.insert(name, declar).is_none(),
+                            "duplicated {}",
+                            export_file.with_ctx(|x| x.name_to_string(name))
+                        );
                         if let Some(mutual_block_size) = mutual_block_size {
                             export_file.mutual_block_sizes.insert(name, (declar_size, mutual_block_size));
                         }
@@ -86,6 +91,24 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
             })
             .into_iter()
             .collect();
+        for prim in PRIMITIVES // todo: clean up
+            .iter()
+            .map(|x| *x)
+            .chain(export_file.config.permitted_axioms.clone().unwrap_or(vec![]).iter().map(|x| x.as_str()))
+        {
+            for d in [(&mut export_file, &mut objs), (&mut paired_export_file, &mut pair_objs)] {
+                let mut pre = 0;
+                for s in name_from_str(prim) {
+                    let (Some(BackRef::In(idx)), _) =
+                        insert_obj(d.0, d.1, ExportJsonVal::NameStr { pre, str: s.into() })
+                    else {
+                        panic!()
+                    };
+                    pre = idx;
+                    // eprintln!("{}", d.0.with_ctx(|x| x.name_to_string(x.export_file.dag.get_name_ptr(idx))))
+                }
+            }
+        }
 
         // ) else {
         //     panic!()
@@ -105,16 +128,20 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
         let mut env1_ = PrimitiveEnv { primitives: vec![], declars: HashSet::from_iter([]), tc: tc1 };
         let mut env2_ = PrimitiveEnv { primitives: vec![], declars: HashSet::from_iter([]), tc: tc2 };
         eprintln!("pair {} {}", env1_.tc.ctx.name_to_string(*declar1.0), env2_.tc.ctx.name_to_string(*declar2.0));
+        let (last1, last2) = ((declar1.0.clone(), declar1.1.clone()), (declar2.0.clone(), declar2.1.clone()));
         let (p_pairs, _) = env1_.pair_with(&mut env2_, *declar1.0, *declar2.0);
         use nanoda_lib::util::TcCtx;
         // let level_base: u32 = export_file.dag.levels.len().try_into().unwrap();
         let mut ids_map: FxHashMap<BackRef, u32> = FxHashMap::default();
 
-        let prefix = loop {
+        let (prefix, verify_prefix) = loop {
             let rng: u32 = rand::rng().random();
             let prefix = format!("transformed_{}", rng);
-            if export_file.dag.find_name(prefix.as_str()).is_none() {
-                break prefix
+            let verify_prefix = format!("verify_{}", rng);
+            if export_file.dag.find_name(prefix.as_str()).is_none()
+                && export_file.dag.find_name(verify_prefix.as_str()).is_none()
+            {
+                break (prefix, verify_prefix)
             }
             // todo!("add to Dag");
         };
@@ -245,7 +272,10 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
                 }),
                 ExprSort(l) => Some(ExprSort(map_level(&ids_map, l))),
                 Axiom { name, uparams, ty, is_unsafe } =>
-                    if p_pairs.contains_key(&name) {
+                    if p_pairs
+                        .get(&name)
+                        .map_or(false, |x| export_file.declars.contains_key(&export_file.dag.get_name_ptr(*x)))
+                    {
                         None
                     } else {
                         Some(Axiom {
@@ -256,7 +286,10 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
                         })
                     },
                 Thm { name, uparams, ty, value } =>
-                    if p_pairs.contains_key(&name) {
+                    if p_pairs
+                        .get(&name)
+                        .map_or(false, |x| export_file.declars.contains_key(&export_file.dag.get_name_ptr(*x)))
+                    {
                         // panic!()
                         None
                     } else {
@@ -268,7 +301,10 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
                         })
                     },
                 Defn { name, uparams, ty, value, hint, safety } =>
-                    if p_pairs.contains_key(&name) {
+                    if p_pairs
+                        .get(&name)
+                        .map_or(false, |x| export_file.declars.contains_key(&export_file.dag.get_name_ptr(*x)))
+                    {
                         // panic!()
                         None
                     } else {
@@ -282,7 +318,10 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
                         })
                     },
                 Opaque { name, uparams, ty, value, is_unsafe } =>
-                    if p_pairs.contains_key(&name) {
+                    if p_pairs
+                        .get(&name)
+                        .map_or(false, |x| export_file.declars.contains_key(&export_file.dag.get_name_ptr(*x)))
+                    {
                         None
                     } else {
                         Some(Opaque {
@@ -294,7 +333,10 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
                         })
                     },
                 Quot { name, uparams, ty, kind } =>
-                    if p_pairs.contains_key(&name) {
+                    if p_pairs
+                        .get(&name)
+                        .map_or(false, |x| export_file.declars.contains_key(&export_file.dag.get_name_ptr(*x)))
+                    {
                         None
                     } else {
                         Some(Quot {
@@ -305,7 +347,10 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
                         })
                     },
                 Inductive { ind_vals, ctor_vals, rec_vals } =>
-                    if p_pairs.contains_key(&ind_vals[0].name) {
+                    if p_pairs
+                        .get(&ind_vals[0].name)
+                        .map_or(false, |x| export_file.declars.contains_key(&export_file.dag.get_name_ptr(*x)))
+                    {
                         None
                     } else {
                         Some(Inductive {
@@ -379,28 +424,29 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
                         assert_eq!(new_idx, idx.unwrap().id() + name_base);
                     }
                     (Some(new_idx), _) => {
-                        ids_map.insert(idx.unwrap(), new_idx.id());
+                        ids_map.insert(idx.unwrap(), new_idx.id()).map(|x| assert_eq!(x, new_idx.id()));
                     }
                 }
             }
         }
+
         export_file.post_process();
-        export_file.check_all_declars();
+        // export_file.check_all_declars();
+        for declar in export_file.declars.values() {
+            let name = export_file.with_ctx(|c| c.name_to_string(declar.info().name));
+            if name.starts_with(&prefix) {
+                // eprintln!("check {}", name);
+                // eprintln!(
+                //     "{}",
+                //     export_file
+                //         .with_ctx(|c| c.with_pp(|pp| pp.pp_declar(declar.info().name)).unwrap_or("".to_string()))
+                // );
+            }
+            export_file.check_declar(declar);
+        }
         for obj in objs {
             println!("{}", serde_json::to_string(&obj).unwrap());
         }
-        // for declar in export_file.declars.values() {
-        //     let name = export_file.with_ctx(|c| c.name_to_string(declar.info().name));
-        //     if name.starts_with(&prefix) {
-        //         eprintln!("check {}", name);
-        //         eprintln!(
-        //             "{}",
-        //             export_file
-        //                 .with_ctx(|c| c.with_pp(|pp| pp.pp_declar(declar.info().name)).unwrap_or("".to_string()))
-        //         );
-        //     }
-        //     export_file.check_declar(declar);
-        // }
     }
 
     // Pretty print as necessary

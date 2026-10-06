@@ -958,7 +958,12 @@ impl<'x, 't: 'x, 'p: 't> TypeChecker<'x, 't, 'p> {
     }
 
     pub fn assert_def_eq(&mut self, u: ExprPtr<'t>, v: ExprPtr<'t>) {
-        assert!(self.def_eq(u, v), "{}\nIS DIFFERENT FROM\n{}", self.ctx.with_pp(|x| x.pp_expr(u)), self.ctx.with_pp(|x| x.pp_expr(v)))
+        assert!(
+            self.def_eq(u, v),
+            "{}\nIS DIFFERENT FROM\n{}",
+            self.ctx.with_pp(|x| x.pp_expr(u)),
+            self.ctx.with_pp(|x| x.pp_expr(v))
+        )
     }
 
     pub fn def_eq(&mut self, x: ExprPtr<'t>, y: ExprPtr<'t>) -> bool {

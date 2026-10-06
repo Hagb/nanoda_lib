@@ -61,7 +61,7 @@ impl<A> Ptr<A> {
         Self { raw: tag | idx_u32, ph: PhantomData }
     }
 
-    pub(crate) fn idx(&self) -> usize { (self.raw & IDX_MASK) as usize }
+    pub fn idx(&self) -> usize { (self.raw & IDX_MASK) as usize }
 
     pub fn dag_marker(&self) -> DagMarker {
         if self.raw & TC_BIT == 0 {

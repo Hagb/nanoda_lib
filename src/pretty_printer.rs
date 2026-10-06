@@ -616,7 +616,7 @@ impl<'x, 't, 'p> PrettyPrinter<'x, 't, 'p> {
         match self.ctx.read_expr(e) {
             App { fun, arg, .. } => {
                 let (f, mut out) = self.unfold_apps_pp(fun);
-                if !(self.is_implicit_fun(fun) && !self.options().explicit) {
+                if !(!self.options().explicit && self.is_implicit_fun(fun)) {
                     out.push(arg);
                 }
                 (f, out)

@@ -535,7 +535,7 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
             println!("{}", serde_json::to_string(&obj).unwrap());
         }
         eprintln!(
-            "`{}` is adopted to prove `{}` in `{}`",
+            "`{}` is adapted to prove `{}` in `{}`",
             paired_export_file.with_ctx(|x| x.name_to_string(last2.1.info().name)),
             export_file.with_ctx(|x| x.name_to_string(last1.info().name)),
             export_file.with_ctx(|x| x.name_to_string(x.export_file.dag.get_name_ptr(verify_nidx)))

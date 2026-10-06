@@ -84,7 +84,13 @@ An example configuration file:
 
 With `paired_export_file_path` configuration, the last statement in the paired export file will be compared with the last one in the export file.
 
-If the former one is syntactically equivalent to the latter one modulo renaming of inductive types, opaques, and axioms, then this declarations in the paired export file will be mapped into ones in the export file. A proofs derived from the paired export file with declarations renamed to the export file ones will be printed to stdout.
+If the former one is syntactically equivalent to the latter one modulo renaming of inductive types, opaques, and axioms, then this declarations in the paired export file will be mapped into ones in the export file. A proofs derived from the paired export file with declarations renamed to the export file ones will be printed to stdout:
+
+```bash
+path/to/nanoda_bin config.json > adapted_solution_to_statement.json
+```
+
+. An example of `config.json` is as follows:
 
 ```json
 {
@@ -107,7 +113,7 @@ If the former one is syntactically equivalent to the latter one modulo renaming 
 }
 ```
 
-The configuration `unpermitted_axiom_hard_error` should be set to false, and the statement should be exported as type of a custom axiom, which can be done with [a modified lean4export](https://github.com/WuProver/lean4export) in the lean project with the statement to be exported:
+. The configuration `unpermitted_axiom_hard_error` should be set to false, and the statement should be exported as type of a custom axiom, which can be done with [a modified lean4export](https://github.com/WuProver/lean4export) in the lean project with the statement to be exported:
 
 ```bash
 lake env path/to/lean4export StatementModule --as-axiom="statement" -- Nat Quot.mk Quot.lift Quot.ind String Bool Char List propext Classical.choice eagerReduce statement > statement.ndjson

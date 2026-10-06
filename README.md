@@ -6,7 +6,7 @@ This is an external type checker for the [Lean 4](https://lean-lang.org/) progra
 
 ## Building and running the binary
 
-Either run the binary directly through cargo `cargo run --release -- <path_to_config>`, or build the binary using `cargo build --release`, then run the built binary, passing a path to a [configuration](#configuration-file). Building with cargo should just work on all modern platforms without requiring additional build steps.
+Either run the binary directly through cargo `cargo +nightly-2026-07-30 run --release -- <path_to_config>`, or build the binary using `cargo +nightly-2026-07-30 build --release`, then run the built binary, passing a path to a [configuration](#configuration-file). Building with cargo should just work on all modern platforms without requiring additional build steps.
 
 The binary takes a single argument, which is a path to a json configuration file describing the resource locations and desired options needed to run the type checker. Export files can be streamed via stdin rather than by file path by setting the configuration option `use_stdin: true`, at which point the executable will expect to receive the contents of the export file via stdin.
 
@@ -44,6 +44,8 @@ If `"unsafe_permit_all_axioms"` is set to `true`, all axioms will be admitted to
 
 `"declar_sep"` is a separator to print between each pretty printed declaration. A default of "\n\n" will end each declaration with a newline, then put a blank line between successive declarations. While this does allow for the injection of arbitrary strings into the pretty printer output, it's rejected if not valid UTF-8, and the configuration file is controlled entirely by the operator of the type checker, so I don't consider this any more of a vector for attack than specifying an incorrect export file path or knowingly whitelisting an unsound axiom.
 
+`"paired_export_file_path"`, see the next section.
+
 If `"print_success_message"` is set to false, no additional output will be printed on success, and users should look to the platform-specific exit code. If `"pp_to_stdout"` is `true` and `"print_success_message"` is `false` the pretty printer output will still be written to stdout.
 
 An example configuration file:
@@ -77,3 +79,43 @@ An example configuration file:
     "print_success_message": false
 }
 ```
+
+## Pairing declarations between given statement and proofs with unnamed declarations
+
+With `paired_export_file_path` configuration, the last statement in the paired export file will be compared with the last one in the export file.
+
+If the former one is syntactically equivalent to the latter one modulo renaming of inductive types, opaques, and axioms, then this declarations in the paired export file will be mapped into ones in the export file. A proofs derived from the paired export file with declarations renamed to the export file ones will be printed to stdout.
+
+```json
+{
+    "export_file_path": "statement.ndjson",
+    "paired_export_file_path": "solution.ndjson",
+    "use_stdin": false,
+    "permitted_axioms": [
+        "propext",
+        "Classical.choice",
+        "Quot.sound"
+    ],
+    "unpermitted_axiom_hard_error": true,
+    "nat_extension": true,
+    "string_extension": true,
+    "unsafe_permit_all_axioms": false,
+    "pp_options": {
+        "proofs": true,
+        "explicit": true
+    }
+}
+```
+
+The configuration `unpermitted_axiom_hard_error` should be set to false, and the statement should be exported as type of a custom axiom, which can be done with [a modified lean4export](https://github.com/WuProver/lean4export) in the lean project with the statement to be exported:
+
+```bash
+lake env path/to/lean4export StatementModule --as-axiom="statement" -- Nat Quot.mk Quot.lift Quot.ind String Bool Char List propext Classical.choice eagerReduce statement > statement.ndjson
+```
+
+where `statement` declaration (whose type is the statement and value will not be exported) is in module `StatementModule`. And solution can be exported by
+
+```bash
+lake env path/to/lean4export SolutionModule --as-axiom="solution" -- solution > solution.ndjson
+```
+.

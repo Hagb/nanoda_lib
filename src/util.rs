@@ -1,4 +1,4 @@
-use crate::env::{DeclarMap, Env, EnvLimit, NotationMap};
+use crate::env::{Declar, DeclarMap, Env, EnvLimit, NotationMap};
 use crate::expr::{BinderStyle, Expr, FVarId};
 use crate::level::Level;
 use crate::name::Name;
@@ -957,7 +957,7 @@ pub struct Config {
     pub paired_export_file_path: Option<PathBuf>,
 
     #[serde(default)]
-    pub output_export_file_path: Option<PathBuf>
+    pub output_export_file_path: Option<PathBuf>,
 }
 
 impl TryFrom<&Path> for Config {
@@ -1026,7 +1026,9 @@ impl Config {
 
     // Returns the export file, and a list of strings representing the names of "skipped" axioms
     // (axioms which were in the export file, but not allowed by the execution config).
-    pub fn to_export_file<'a, 'b>(self) -> Result<(ExportFile<'a>, Vec<String>, Vec<ExportJsonObject<'b>>), Box<dyn Error>> {
+    pub fn to_export_file<'a, 'b>(
+        self,
+    ) -> Result<(ExportFile<'a>, Vec<(u32, Declar<'a>)>, Vec<ExportJsonObject<'b>>), Box<dyn Error>> {
         if let Some(pathbuf) = self.export_file_path.as_ref() {
             match OpenOptions::new().read(true).truncate(false).open(pathbuf) {
                 Ok(file) => crate::parser::parse_export_file(BufReader::new(file), self),
@@ -1039,7 +1041,9 @@ impl Config {
             panic!("Configuration file must specify en export file path or \"use_stdin\": true")
         }
     }
-    pub fn to_paired_export_file<'a, 'b>(self) -> Result<(ExportFile<'a>, Vec<String>, Vec<ExportJsonObject<'b>>), Box<dyn Error>> {
+    pub fn to_paired_export_file<'a, 'b>(
+        self,
+    ) -> Result<(ExportFile<'a>, Vec<(u32, Declar<'a>)>, Vec<ExportJsonObject<'b>>), Box<dyn Error>> {
         if let Some(pathbuf) = self.paired_export_file_path.as_ref() {
             match OpenOptions::new().read(true).truncate(false).open(pathbuf) {
                 Ok(file) => crate::parser::parse_export_file(BufReader::new(file), self),

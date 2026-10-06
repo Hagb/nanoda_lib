@@ -1,22 +1,24 @@
 #![feature(map_try_insert)]
 
-use nanoda_lib::env::EnvLimit;
+use nanoda_lib::env::{EnvLimit, ReducibilityHint};
 use nanoda_lib::expr::Expr;
+use nanoda_lib::level::Level;
 use nanoda_lib::pair::Key::Const;
 use nanoda_lib::pair::{PrimitiveEnv, PRIMITIVES};
 use nanoda_lib::parser::{
-    BackRef, Constructor, ExportJsonObject, ExportJsonVal, IndInfo, LeanDagInsertResult, Recursor, RecursorRule,
+    BackRef, Constructor, DefinitionSafety, ExportJsonObject, ExportJsonVal, IndInfo, LeanDagInsertResult, Recursor,
+    RecursorRule,
 };
 use nanoda_lib::tc::TypeChecker;
 use nanoda_lib::util::{Config, ExportFile, LeanDag, TcCtx};
 use rand::RngExt;
-use rustc_hash::FxHashMap;
-use std::assert_matches;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fs::OpenOptions;
 use std::path::Path;
+use std::{assert_matches, cmp};
 
 fn main() -> Result<(), MainError> {
     let mut args = std::env::args();
@@ -115,21 +117,35 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
         // };
         let mut dag1 = LeanDag::new(&cfg);
         let mut ctx1 = TcCtx::new(&export_file, &mut dag1);
-        let declar1 = export_file.declars.last().unwrap();
+        let last1_declar = export_file.declars.last().unwrap().1;
+        let declar1 = if let Some((i, last1_skipped)) = skipped_axioms.last() {
+            // eprintln!("skip {}", export_file.with_ctx(|c| c.name_to_string(last1_skipped.info().name)));
+            if TryInto::<usize>::try_into(*i).unwrap() < export_file.declars.len() {
+                last1_declar
+            } else {
+                last1_skipped
+            }
+        } else {
+            last1_declar
+        };
         let env1 = export_file.new_env(EnvLimit::PpUnlimited);
-        let tc1 = TypeChecker::new(&mut ctx1, &env1, Some(*declar1.1.info()));
+        let tc1 = TypeChecker::new(&mut ctx1, &env1, None);
 
         let mut dag2 = LeanDag::new(&cfg);
         let mut ctx2 = TcCtx::new(&paired_export_file, &mut dag2);
         let declar2 = paired_export_file.declars.last().unwrap();
         let env2 = paired_export_file.new_env(EnvLimit::PpUnlimited);
-        let tc2 = TypeChecker::new(&mut ctx2, &env2, Some(*declar2.1.info()));
+        let tc2 = TypeChecker::new(&mut ctx2, &env2, None);
 
         let mut env1_ = PrimitiveEnv { primitives: vec![], declars: HashSet::from_iter([]), tc: tc1 };
         let mut env2_ = PrimitiveEnv { primitives: vec![], declars: HashSet::from_iter([]), tc: tc2 };
-        eprintln!("pair {} {}", env1_.tc.ctx.name_to_string(*declar1.0), env2_.tc.ctx.name_to_string(*declar2.0));
-        let (last1, last2) = ((declar1.0.clone(), declar1.1.clone()), (declar2.0.clone(), declar2.1.clone()));
-        let (p_pairs, _) = env1_.pair_with(&mut env2_, *declar1.0, *declar2.0);
+        eprintln!(
+            "pair {} {}",
+            env1_.tc.ctx.name_to_string(declar1.info().name),
+            env2_.tc.ctx.name_to_string(*declar2.0)
+        );
+        let (last1, last2) = (declar1.clone(), (declar2.0.clone(), declar2.1.clone()));
+        let (p_pairs, l_pair) = env1_.pair_with(&mut env2_, declar1.info().ty, declar2.1.info().ty);
         use nanoda_lib::util::TcCtx;
         // let level_base: u32 = export_file.dag.levels.len().try_into().unwrap();
         let mut ids_map: FxHashMap<BackRef, u32> = FxHashMap::default();
@@ -429,24 +445,101 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
                 }
             }
         }
-
-        export_file.post_process();
-        // export_file.check_all_declars();
-        for declar in export_file.declars.values() {
-            let name = export_file.with_ctx(|c| c.name_to_string(declar.info().name));
-            if name.starts_with(&prefix) {
-                // eprintln!("check {}", name);
-                // eprintln!(
-                //     "{}",
-                //     export_file
-                //         .with_ctx(|c| c.with_pp(|pp| pp.pp_declar(declar.info().name)).unwrap_or("".to_string()))
-                // );
+        // let a = last1.0;
+        // let aa = paired_export_file.declars.last().unwrap();
+        let (Some(BackRef::In(verify_nidx)), true) = insert_obj(
+            &mut export_file,
+            &mut objs,
+            ExportJsonVal::NameStr { pre: 0, str: verify_prefix.clone().into() },
+        ) else {
+            panic!()
+        };
+        fn level_to_param(l: &Level) -> u32 {
+            match l {
+                Level::Param(i, _) => i.idx().try_into().unwrap(),
+                _ => panic!(),
             }
-            export_file.check_declar(declar);
         }
+        let uparams1: Vec<u32> = export_file
+            .dag
+            .uparams
+            .get_index(last1.info().uparams.idx())
+            .unwrap()
+            .iter()
+            .map(|x| level_to_param(export_file.dag.levels.get_index(x.idx()).unwrap()).try_into().unwrap())
+            .collect();
+        let uparams2: Vec<Option<u32>> = paired_export_file
+            .dag
+            .uparams
+            .get_index((last2.1.info().uparams.idx()))
+            .unwrap()
+            .iter()
+            .map(|x| level_to_param(paired_export_file.dag.levels.get_index(x.idx()).unwrap()).try_into().unwrap())
+            .map(|x: u32| l_pair.get(&x).map_or(None, |x| if uparams1.contains(x) { Some(*x) } else { None }))
+            .collect();
+        // eprintln!(
+        // "param1 {:?} of {}, param2 {:?} of {}",
+        //     uparams1,
+        //     export_file.with_ctx(|x| x.name_to_string(last1.info().name)),
+        //     uparams2,
+        //     paired_export_file.with_ctx(|x| x.name_to_string(last2.1.info().name))
+        // );
+        let uparams_idx = export_file.dag.get_uparams_ptr_with_default_zero(uparams2.as_slice()).idx();
+        let uparams2: Vec<u32> = export_file
+            .dag
+            .uparams
+            .get_index(uparams_idx)
+            .unwrap()
+            .iter()
+            .map(|x| x.idx().try_into().unwrap())
+            .collect();
+        let (Some(BackRef::Ie(const_idx)), _) = insert_obj(
+            &mut export_file,
+            &mut objs,
+            ExportJsonVal::ExprConst {
+                name: map_declar_name(&ids_map, last2.0.idx().try_into().unwrap()),
+                levels: uparams2,
+            },
+        ) else {
+            panic!()
+        };
+        let (None, _) = insert_obj(
+            &mut export_file,
+            &mut objs,
+            ExportJsonVal::Defn {
+                name: verify_nidx,
+                uparams: uparams1,
+                ty: last1.info().ty.idx().try_into().unwrap(),
+                value: const_idx,
+                hint: ReducibilityHint::Abbrev,
+                safety: DefinitionSafety::Safe,
+            },
+        ) else {
+            panic!()
+        };
+        export_file.post_process();
+        export_file.check_all_declars();
+        // for declar in export_file.declars.values() {
+        //     let name = export_file.with_ctx(|c| c.name_to_string(declar.info().name));
+        // if name.starts_with(&prefix) || name.starts_with(&verify_prefix) {
+        //     // eprintln!("check {}", name);
+        //     // eprintln!(
+        //     //     "{}",
+        //     //     export_file
+        //     //         .with_ctx(|c| c.with_pp(|pp| pp.pp_declar(declar.info().name)).unwrap_or("".to_string()))
+        //     // );
+        // }
+        //     export_file.check_declar(declar);
+        // }
         for obj in objs {
             println!("{}", serde_json::to_string(&obj).unwrap());
         }
+        eprintln!(
+            "`{}` is adopted to prove `{}` in `{}`",
+            paired_export_file.with_ctx(|x| x.name_to_string(last2.1.info().name)),
+            export_file.with_ctx(|x| x.name_to_string(last1.info().name)),
+            export_file.with_ctx(|x| x.name_to_string(x.export_file.dag.get_name_ptr(verify_nidx)))
+        );
     }
 
     // Pretty print as necessary

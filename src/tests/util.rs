@@ -1,5 +1,6 @@
+use crate::env::Declar;
 use crate::parser::ExportJsonObject;
-use crate::util::{Config, CowStr, ExportFile, ExprPtr, LevelPtr, TcCtx};
+use crate::util::{Config, CowStr, ExportFile, ExprPtr, LevelPtr, NamePtr, TcCtx};
 use rand::distr::Alphanumeric;
 use rand::rngs::ThreadRng;
 use std::error::Error;
@@ -13,7 +14,9 @@ pub(crate) fn test_export_file<A>(
     Ok(f(&export_file))
 }
 
-pub(crate) fn test_get_export_file<'p, 'b>(config_path: Option<&Path>) -> Result<(ExportFile<'p>, Vec<String>, Vec<ExportJsonObject<'b>>), Box<dyn Error>> {
+pub(crate) fn test_get_export_file<'p, 'b>(
+    config_path: Option<&Path>,
+) -> Result<(ExportFile<'p>, Vec<(u32, Declar<'p>)>, Vec<ExportJsonObject<'b>>), Box<dyn Error>> {
     let config_file = match config_path {
         None => Config {
             export_file_path: Some(PathBuf::from("test_resources/Empty/export")),
@@ -94,14 +97,11 @@ fn check_empty() -> Result<(), Box<dyn Error>> {
 #[test]
 #[should_panic(expected = "infer_proj prop")]
 fn check_proj_from_prop() {
-    test_export_file_should_panic(
-        Some(Path::new("test_resources/ProjFromProp/config.json")),
-        |export| {
-            for declar in export.declars.values() {
-                export.check_declar(declar);
-            }
-        },
-    )
+    test_export_file_should_panic(Some(Path::new("test_resources/ProjFromProp/config.json")), |export| {
+        for declar in export.declars.values() {
+            export.check_declar(declar);
+        }
+    })
 }
 
 pub(crate) fn rand_string<'t>(rng: &mut ThreadRng, size: usize) -> CowStr<'t> {

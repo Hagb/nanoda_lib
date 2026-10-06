@@ -20,6 +20,7 @@ use serde;
 //     Level,
 // }
 
+#[derive(Debug)]
 pub enum Key<'t> {
     Declar(NamePtr<'t>),
     LevelParam(NamePtr<'t>),
@@ -159,7 +160,7 @@ impl<'x, 't, 'p> PrimitiveEnv<'x, 't, 'p> {
         }
     }
 
-    pub fn get_primitives(&mut self, n: NamePtr<'t>, ty_only: bool /*, levels: Option<LevelsPtr<'t>>*/) {
+    fn get_primitives(&mut self, n: NamePtr<'t>, ty_only: bool /*, levels: Option<LevelsPtr<'t>>*/) {
         if self.declars.contains(&n) {
             return ()
         }
@@ -193,6 +194,14 @@ impl<'x, 't, 'p> PrimitiveEnv<'x, 't, 'p> {
                 _ => (),
             }
         };
+        for c in consts {
+            self.get_primitives(c, false);
+        }
+    }
+
+    fn get_primitives_from_expr(&mut self, e: ExprPtr<'t>) {
+        let mut consts: Vec<NamePtr<'t>> = vec![];
+        self.get_primitives_aux(e, &mut consts);
         for c in consts {
             self.get_primitives(c, false);
         }
@@ -240,7 +249,7 @@ impl<'x, 't, 'p> PrimitiveEnv<'x, 't, 'p> {
             if let Some(n1) = self.tc.ctx.export_file.dag.find_name(u) {
                 if let Some(n2) = env2.tc.ctx.export_file.dag.find_name(u) {
                     eprintln!(
-                        "early level pairing: {} -> {}",
+                        "level pairing: {} -> {}",
                         env2.tc.ctx.name_to_string(n2),
                         self.tc.ctx.name_to_string(n1)
                     );
@@ -295,8 +304,8 @@ impl<'x, 't, 'p> PrimitiveEnv<'x, 't, 'p> {
                         // break;
                     };
                 }
-                _ => {
-                    eprintln!("different key");
+                (a, b) => {
+                    eprintln!("different key {:?} != {:?}", a, b);
                     break;
                 }
             }
@@ -310,8 +319,8 @@ impl<'x, 't, 'p> PrimitiveEnv<'x, 't, 'p> {
     pub fn pair_with<'x2, 't2, 'p2>(
         &mut self,
         env2: &mut PrimitiveEnv<'x2, 't2, 'p2>,
-        n1: NamePtr<'t>,
-        n2: NamePtr<'t2>,
+        e1: ExprPtr<'t>,
+        e2: ExprPtr<'t2>,
     ) -> (FxHashMap<u32, u32>, FxHashMap<u32, u32>) {
         for prim in PRIMITIVES
             .iter()
@@ -323,7 +332,7 @@ impl<'x, 't, 'p> PrimitiveEnv<'x, 't, 'p> {
                 if let Some(n2) = env2.tc.ctx.export_file.dag.find_name(prim) {
                     if self.tc.env.get_declar(&n1).is_some() && env2.tc.env.get_declar(&n2).is_some() {
                         eprintln!(
-                            "early get axiom/primitive declar: {} -> {}",
+                            "axiom/primitive declar: {} -> {}",
                             env2.tc.ctx.name_to_string(n2),
                             self.tc.ctx.name_to_string(n1)
                         );
@@ -333,8 +342,8 @@ impl<'x, 't, 'p> PrimitiveEnv<'x, 't, 'p> {
                 }
             }
         }
-        self.get_primitives(n1, true);
-        env2.get_primitives(n2, true);
+        self.get_primitives_from_expr(e1);
+        env2.get_primitives_from_expr(e2);
         let (primitives, levels) = self.pair_primitives(env2);
         fn name_to_id<'x_, 't_, 'p_>(name: NamePtr<'t_>) -> u32 {
             // let name_ = env.tc.ctx.read_name(name);

@@ -45,7 +45,7 @@ pub struct Parser<'a, R: BufRead> {
     config: Config,
     /// Tracks axiom names that were found in the export file, but not white-listed,
     /// for use when `unpermitted_axiom_hard_error: false`
-    skipped: Vec<String>,
+    skipped: Vec<(u32, Declar<'a>)>,
     mutual_block_sizes: FxHashMap<NamePtr<'a>, (usize, usize)>,
 }
 
@@ -396,7 +396,7 @@ pub enum ExportJsonVal<'a> {
 pub(crate) fn parse_export_file<'p, 'a, R: BufRead>(
     buf_reader: R,
     config: Config,
-) -> Result<(crate::util::ExportFile<'p>, Vec<String>, Vec<ExportJsonObject<'a>>), Box<dyn Error>> {
+) -> Result<(crate::util::ExportFile<'p>, Vec<(u32, Declar<'a>)>, Vec<ExportJsonObject<'a>>), Box<dyn Error>> {
     let mut parser = Parser::new(buf_reader, config);
     let mut line_buffer = String::new();
     let mut export_objects: Vec<ExportJsonObject<'a>> = vec![];
@@ -473,7 +473,7 @@ impl<'p> ExportFile<'p> {
 pub enum LeanDagInsertResult<'a> {
     Id((BackRef, bool)),
     Declars(Vec<(NamePtr<'a>, Declar<'a>, Option<usize>)>),
-    Skip(String),
+    Skip(Declar<'a>),
     None,
 }
 
@@ -505,7 +505,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
                     }
                 }
             }
-            LeanDagInsertResult::Skip(name) => self.skipped.push(name),
+            LeanDagInsertResult::Skip(d) => self.skipped.push((self.declars.len().try_into().unwrap(), d)),
             LeanDagInsertResult::None => assert!(assigned_idx.is_none()),
         }
         Ok(line)
@@ -513,8 +513,8 @@ impl<'a, R: BufRead> Parser<'a, R> {
 }
 
 impl Config {
-    fn axiom_permitted(&self, n: String) -> bool {
-        self.unsafe_permit_all_axioms || self.permitted_axioms.as_ref().map(|v| v.contains(&n)).unwrap_or(false)
+    fn axiom_permitted(&self, n: &String) -> bool {
+        self.unsafe_permit_all_axioms || self.permitted_axioms.as_ref().map(|v| v.contains(n)).unwrap_or(false)
     }
 }
 
@@ -567,7 +567,7 @@ impl<'a> LeanDag<'a> {
         names
     }
 
-    fn get_uparams_ptr(&mut self, name_idxs: &[u32]) -> LevelsPtr<'a> {
+    pub fn get_uparams_ptr(&mut self, name_idxs: &[u32]) -> LevelsPtr<'a> {
         let mut levels = Vec::new();
         for name_idx in name_idxs.iter().copied() {
             let name_ptr = self.get_name_ptr(name_idx);
@@ -576,6 +576,24 @@ impl<'a> LeanDag<'a> {
             let idx = self.levels.get_index_of(&Level::Param(name_ptr, hash)).unwrap();
             levels.push(LevelPtr::from(DagMarker::ExportFile, idx as usize));
         }
+        LevelsPtr::from(DagMarker::ExportFile, self.uparams.insert_full(Arc::from(levels)).0)
+    }
+
+    pub fn get_uparams_ptr_with_default_zero(&mut self, name_idxs: &[Option<u32>]) -> LevelsPtr<'a> {
+        let levels : Vec<_> = name_idxs.iter().map(|name_idx| {
+            LevelPtr::from(
+                DagMarker::ExportFile,
+                if let Some(name_idx) = *name_idx {
+                    let name_ptr = self.get_name_ptr(name_idx);
+                    let hash = hash64!(crate::level::PARAM_HASH, name_ptr);
+                    self.levels.get_index_of(&Level::Param(name_ptr, hash)).unwrap()
+                } else {
+                    self.levels.get_index_of(&Level::Zero).unwrap()
+                },
+            )
+        }).collect();
+        // );
+        // }
         LevelsPtr::from(DagMarker::ExportFile, self.uparams.insert_full(Arc::from(levels)).0)
     }
 
@@ -847,15 +865,16 @@ impl<'a> LeanDag<'a> {
                 let info = DeclarInfo { name, ty, uparams };
                 let axiom = Declar::Axiom { info };
                 if let Some(config) = cfg {
-                    if config.axiom_permitted(self.name_to_string(name)) {
+                    let name_string = self.name_to_string(name);
+                    if config.axiom_permitted(&name_string) {
                         // assert!(self.declars.insert(name, axiom).is_none());
                         insert_declar(name, axiom)
                     } else {
-                        let name_string = self.name_to_string(name);
+                        // let name_string = self.name_to_string(name);
                         if config.unpermitted_axiom_hard_error {
                             return Err(Box::from(format!("export file declares unpermitted axiom {:?}", name_string)))
                         } else {
-                            Ok(LeanDagInsertResult::Skip(name_string))
+                            Ok(LeanDagInsertResult::Skip(axiom))
                         }
                     }
                 } else {

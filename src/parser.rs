@@ -393,8 +393,8 @@ pub enum ExportJsonVal<'a> {
     },
 }
 
-pub(crate) fn parse_export_file<'p, 'a, R: BufRead>(
-    buf_reader: R,
+pub fn parse_export_file<'p, 'a, R: BufRead>(
+    buf_reader: &mut R,
     config: Config,
 ) -> Result<(crate::util::ExportFile<'p>, Vec<(u32, Declar<'a>)>, Vec<ExportJsonObject<'a>>), Box<dyn Error>> {
     let mut parser = Parser::new(buf_reader, config);
@@ -405,7 +405,12 @@ pub(crate) fn parse_export_file<'p, 'a, R: BufRead>(
         if amt == 0 {
             break
         }
-        export_objects.push(parser.go1(line_buffer.as_str())?);
+        let ret = parser.go1(line_buffer.as_str())?;
+        if matches!(ret, ExportJsonObject {val : ExportJsonVal::Metadata(..), ..}) && parser.line_num != 0 {
+            export_objects.push(ret);   
+            break;
+        }
+        export_objects.push(ret);
         parser.line_num += 1;
         line_buffer.clear();
     }
@@ -474,7 +479,7 @@ pub enum LeanDagInsertResult<'a> {
     Id((BackRef, bool)),
     Declars(Vec<(NamePtr<'a>, Declar<'a>, Option<usize>)>),
     Skip(Declar<'a>),
-    None,
+    Metadata,
 }
 
 impl<'a, R: BufRead> Parser<'a, R> {
@@ -506,7 +511,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
                 }
             }
             LeanDagInsertResult::Skip(d) => self.skipped.push((self.declars.len().try_into().unwrap(), d)),
-            LeanDagInsertResult::None => assert!(assigned_idx.is_none()),
+            LeanDagInsertResult::Metadata => assert!(assigned_idx.is_none()),
         }
         Ok(line)
     }
@@ -636,7 +641,7 @@ impl<'a> LeanDag<'a> {
         match val {
             Metadata(json_val) => {
                 let _ = check_semver(&json_val)?;
-                Ok(LeanDagInsertResult::None)
+                Ok(LeanDagInsertResult::Metadata)
             }
             NameStr { pre, str } => {
                 let pfx = self.get_name_ptr(pre);

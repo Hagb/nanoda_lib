@@ -972,7 +972,7 @@ impl TryFrom<&Path> for Config {
                         "incompatible config options: must specify a path to an export file OR set `use_stdin: true`"
                     )))
                 }
-                if config.export_file_path.is_some() && config.use_stdin {
+                if (config.export_file_path.is_some() || config.paired_export_file_path.is_some()) && config.use_stdin {
                     return Err(Box::from(format!(
                         "incompatible config options: if an export file path is given, `use_stdin` cannot be `true`"
                     )))
@@ -1031,12 +1031,12 @@ impl Config {
     ) -> Result<(ExportFile<'a>, Vec<(u32, Declar<'a>)>, Vec<ExportJsonObject<'b>>), Box<dyn Error>> {
         if let Some(pathbuf) = self.export_file_path.as_ref() {
             match OpenOptions::new().read(true).truncate(false).open(pathbuf) {
-                Ok(file) => crate::parser::parse_export_file(BufReader::new(file), self),
+                Ok(file) => crate::parser::parse_export_file(&mut BufReader::new(file), self),
                 Err(e) => Err(Box::from(format!("Failed to open export file: {:?}", e))),
             }
         } else if self.use_stdin {
-            let reader = BufReader::new(std::io::stdin());
-            crate::parser::parse_export_file(reader, self)
+            let mut reader = BufReader::new(std::io::stdin());
+            crate::parser::parse_export_file(&mut reader, self)
         } else {
             panic!("Configuration file must specify en export file path or \"use_stdin\": true")
         }
@@ -1046,7 +1046,7 @@ impl Config {
     ) -> Result<(ExportFile<'a>, Vec<(u32, Declar<'a>)>, Vec<ExportJsonObject<'b>>), Box<dyn Error>> {
         if let Some(pathbuf) = self.paired_export_file_path.as_ref() {
             match OpenOptions::new().read(true).truncate(false).open(pathbuf) {
-                Ok(file) => crate::parser::parse_export_file(BufReader::new(file), self),
+                Ok(file) => crate::parser::parse_export_file(&mut BufReader::new(file), self),
                 Err(e) => Err(Box::from(format!("Failed to open export file: {:?}", e))),
             }
         } else {

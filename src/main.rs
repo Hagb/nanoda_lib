@@ -6,8 +6,8 @@ use nanoda_lib::level::Level;
 use nanoda_lib::pair::Key::Const;
 use nanoda_lib::pair::{PrimitiveEnv, PRIMITIVES};
 use nanoda_lib::parser::{
-    BackRef, Constructor, DefinitionSafety, ExportJsonObject, ExportJsonVal, IndInfo, LeanDagInsertResult, Recursor,
-    RecursorRule,
+    parse_export_file, BackRef, Constructor, DefinitionSafety, ExportJsonObject, ExportJsonVal, IndInfo,
+    LeanDagInsertResult, Recursor, RecursorRule,
 };
 use nanoda_lib::tc::TypeChecker;
 use nanoda_lib::util::{Config, ExportFile, LeanDag, TcCtx};
@@ -17,6 +17,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fs::OpenOptions;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::{assert_matches, cmp};
 
@@ -41,11 +42,30 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
     let cfg = Config::try_from(config_path)?;
     // Make sure the target pretty printer destination is accessible before doing any real work.
     let mut pp_destination = cfg.get_pp_destination()?;
-    let (mut export_file, skipped_axioms, mut objs) = cfg.clone().to_export_file()?;
+    let mut buf: Box<dyn BufRead> = if cfg.use_stdin {
+        Box::new(BufReader::new(std::io::stdin()))
+    } else if let Some(pathbuf) = cfg.export_file_path.as_ref() {
+        Box::new(BufReader::new(OpenOptions::new().read(true).truncate(false).open(pathbuf).unwrap()))
+    } else {
+        panic!("Configuration file must specify en export file path or \"use_stdin\": true")
+    };
+    let (mut export_file, skipped_axioms, mut objs) = parse_export_file(&mut buf, cfg.clone())?;
     // Check the environment
     export_file.check_all_declars();
 
-    if let Ok((mut paired_export_file, _, mut pair_objs)) = cfg.clone().to_paired_export_file() {
+    'paired: {
+        let buf: Option<Box<dyn BufRead>> = if cfg.use_stdin {
+            Some(buf)
+        } else if let Some(pathbuf) = cfg.paired_export_file_path.as_ref() {
+            Some(Box::new(BufReader::new(OpenOptions::new().read(true).truncate(false).open(pathbuf).unwrap())))
+        } else {
+            None
+        };
+        let Some(mut buf) = buf else { break 'paired };
+        let (mut paired_export_file, _, mut pair_objs) = parse_export_file(&mut buf, cfg.clone())?;
+        if (cfg.use_stdin && pair_objs.len() == 0) {
+            break 'paired;
+        }
         paired_export_file.check_all_declars();
         fn name_from_str(s: &str) -> Vec<String> { s.split(".").map(|x| x.to_string()).collect() }
 
@@ -67,7 +87,7 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
                     (None, true)
                 }
                 LeanDagInsertResult::Skip(..) => (None, false), /*self.skipped.push(name)*/
-                LeanDagInsertResult::None => (None, false),
+                LeanDagInsertResult::Metadata => (None, false),
             };
             if ret.1 {
                 objs.push(ExportJsonObject { val: obj, i: ret.0.clone() })

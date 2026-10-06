@@ -102,14 +102,10 @@ path/to/nanoda_bin config.json > adapted_solution_to_statement.json
         "Classical.choice",
         "Quot.sound"
     ],
-    "unpermitted_axiom_hard_error": true,
+    "unpermitted_axiom_hard_error": false,
     "nat_extension": true,
     "string_extension": true,
     "unsafe_permit_all_axioms": false,
-    "pp_options": {
-        "proofs": true,
-        "explicit": true
-    }
 }
 ```
 

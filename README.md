@@ -112,12 +112,12 @@ path/to/nanoda_bin config.json > adapted_solution_to_statement.json
 . The configuration `unpermitted_axiom_hard_error` should be set to false, and the statement should be exported as type of a custom axiom, which can be done with [a modified lean4export](https://github.com/WuProver/lean4export) in the lean project with the statement to be exported:
 
 ```bash
-lake env path/to/lean4export StatementModule --as-axiom="statement" -- Nat Quot.mk Quot.lift Quot.ind String Bool Char List propext Classical.choice eagerReduce statement > statement.ndjson
+lake env path/to/lean4export StatementModule --as-axiom="statement" -- Nat Quot.mk Quot.lift Quot.ind String Bool Char List propext Classical.choice eagerReduce "statement" > statement.ndjson
 ```
 
-where `statement` declaration (whose type is the statement and value will not be exported) is in module `StatementModule`. And solution can be exported by
+where the 1st and 2nd `statement` is the name of the declaration whose type is the statement and value will not be exported, in module `StatementModule`. And solution `solution` defined in module `SolutionModule` can be exported by
 
 ```bash
-lake env path/to/lean4export SolutionModule --as-axiom="solution" -- solution > solution.ndjson
+lake env path/to/lean4export SolutionModule -- "solution" > solution.ndjson
 ```
 .

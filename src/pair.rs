@@ -132,10 +132,14 @@ impl<'x, 't, 'p> PrimitiveEnv<'x, 't, 'p> {
                 let simplified = self.tc.ctx.simplify(level);
                 self.get_primitives_from_level(simplified);
             }
-            crate::expr::Expr::Const { name, .. } => {
+            crate::expr::Expr::Const { name, levels, .. } => {
                 self.primitives.push(Key::Const(name));
                 // todo!("inductive");
                 consts.push(name);
+                for level in self.tc.ctx.read_levels(levels).iter() {
+                    let simplified = self.tc.ctx.simplify(*level);
+                    self.get_primitives_from_level(simplified);
+                }
                 // self.get_primitives(name, false);
             }
             crate::expr::Expr::App { .. } => unreachable!(),

@@ -956,8 +956,11 @@ pub struct Config {
     #[serde(default)]
     pub paired_export_file_path: Option<PathBuf>,
 
+    // #[serde(default)]
+    // pub output_export_file_path: Option<PathBuf>,
+
     #[serde(default)]
-    pub output_export_file_path: Option<PathBuf>,
+    pub skip_paired_export_file_check: bool,
 }
 
 impl TryFrom<&Path> for Config {

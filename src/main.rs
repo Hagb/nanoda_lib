@@ -49,7 +49,7 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
     } else {
         panic!("Configuration file must specify en export file path or \"use_stdin\": true")
     };
-    let (mut export_file, skipped_axioms, mut objs) = parse_export_file(&mut buf, cfg.clone())?;
+    let (mut export_file, mut skipped_axioms, mut objs) = parse_export_file(&mut buf, cfg.clone())?;
     // Check the environment
     export_file.check_all_declars();
 
@@ -66,7 +66,9 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
         if (cfg.use_stdin && pair_objs.len() == 0) {
             break 'paired;
         }
-        paired_export_file.check_all_declars();
+        if !cfg.skip_paired_export_file_check {
+            paired_export_file.check_all_declars();
+        }
         fn name_from_str(s: &str) -> Vec<String> { s.split(".").map(|x| x.to_string()).collect() }
 
         let mut insert_obj = |export_file: &mut ExportFile, objs: &mut Vec<_>, obj: ExportJsonVal<'c>| {
@@ -132,22 +134,44 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
             }
         }
 
+        let export_declars_num = export_file.declars.len();
         // ) else {
         //     panic!()
         // };
+        // let last1_declar = export_file.declars.last().unwrap().1;
+        // let last1_skipped = skipped_axioms.last();
+        let declar1 = skipped_axioms
+            .pop_if(|(i, _)| TryInto::<usize>::try_into(*i).unwrap() >= export_file.declars.len())
+            .map_or_else(|| export_file.declars.pop().unwrap().1, |x| x.1);
+        let declar1_obj_idx = 'idx: {
+            for (i, obj) in objs.iter().enumerate().rev() {
+                match obj.val {
+                    ExportJsonVal::Axiom { name, .. }
+                    | ExportJsonVal::Thm { name, .. }
+                    | ExportJsonVal::Defn { name, .. }
+                    | ExportJsonVal::Opaque { name, .. }
+                    | ExportJsonVal::Quot { name, .. } =>
+                        if declar1.info().name.idx() == TryInto::<usize>::try_into(name).unwrap() {
+                            break 'idx i;
+                        },
+                    _ => (),
+                }
+            }
+            unreachable!();
+        };
+        objs.remove(declar1_obj_idx);
         let mut dag1 = LeanDag::new(&cfg);
         let mut ctx1 = TcCtx::new(&export_file, &mut dag1);
-        let last1_declar = export_file.declars.last().unwrap().1;
-        let declar1 = if let Some((i, last1_skipped)) = skipped_axioms.last() {
-            // eprintln!("skip {}", export_file.with_ctx(|c| c.name_to_string(last1_skipped.info().name)));
-            if TryInto::<usize>::try_into(*i).unwrap() < export_file.declars.len() {
-                last1_declar
-            } else {
-                last1_skipped
-            }
-        } else {
-            last1_declar
-        };
+        // let declar1 = if let Some((i, _)) = last1_skipped {
+        //     // eprintln!("skip {}", export_file.with_ctx(|c| c.name_to_string(last1_skipped.info().name)));
+        //     if TryInto::<usize>::try_into(*i).unwrap() < export_file.declars.len() {
+        //         last1_declar
+        //     } else {
+        //         .unwrap().1
+        //     }
+        // } else {
+        //     last1_declar
+        // };
         let env1 = export_file.new_env(EnvLimit::PpUnlimited);
         let tc1 = TypeChecker::new(&mut ctx1, &env1, None);
 
@@ -538,28 +562,28 @@ fn use_config<'c>(config_path: &'c Path) -> Result<Option<String>, Box<dyn Error
             panic!()
         };
         export_file.post_process();
-        export_file.check_all_declars();
-        // for declar in export_file.declars.values() {
-        //     let name = export_file.with_ctx(|c| c.name_to_string(declar.info().name));
-        // if name.starts_with(&prefix) || name.starts_with(&verify_prefix) {
-        //     // eprintln!("check {}", name);
-        //     // eprintln!(
-        //     //     "{}",
-        //     //     export_file
-        //     //         .with_ctx(|c| c.with_pp(|pp| pp.pp_declar(declar.info().name)).unwrap_or("".to_string()))
-        //     // );
-        // }
-        //     export_file.check_declar(declar);
-        // }
+        // export_file.check_all_declars();
+        for declar in export_file.declars.iter().skip(export_declars_num) {
+            // let name = export_file.with_ctx(|c| c.name_to_string(declar.1.info().name));
+            // if name.starts_with(&prefix) || name.starts_with(&verify_prefix) {
+            //     eprintln!("checking {}", name);
+            //     //     // eprintln!(
+            //     //     //     "{}",
+            //     //     //     export_file
+            //     //     //         .with_ctx(|c| c.with_pp(|pp| pp.pp_declar(declar.info().name)).unwrap_or("".to_string()))
+            //     //     // );
+            // }
+            export_file.check_declar(declar.1);
+        }
         for obj in objs {
             println!("{}", serde_json::to_string(&obj).unwrap());
         }
-        eprintln!(
-            "`{}` is adapted to prove `{}` in `{}`",
-            paired_export_file.with_ctx(|x| x.name_to_string(last2.1.info().name)),
-            export_file.with_ctx(|x| x.name_to_string(last1.info().name)),
-            export_file.with_ctx(|x| x.name_to_string(x.export_file.dag.get_name_ptr(verify_nidx)))
-        );
+        // eprintln!(
+        //     "`{}` is adapted to prove `{}` in `{}`",
+        //     paired_export_file.with_ctx(|x| x.name_to_string(last2.1.info().name)),
+        //     export_file.with_ctx(|x| x.name_to_string(last1.info().name)),
+        //     export_file.with_ctx(|x| x.name_to_string(x.export_file.dag.get_name_ptr(verify_nidx)))
+        // );
     }
 
     // Pretty print as necessary
